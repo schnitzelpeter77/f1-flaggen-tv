@@ -31,11 +31,43 @@ class Erkenner {
         else -> null
     }
 
+    /** Aktuell laufende Phase laut Bild (YELLOW/VSC/SC/RED) und wann ihr Hinweis zuletzt zu sehen war. */
+    private var aktivePhase: String? = null
+    private var phaseZuletztGesehen = 0L
+
+    /** Erkennt, ob im Text noch ein Hinweis auf die laufende Phase steht (auch Kurzformen in der Zeitenliste). */
+    private fun phaseNochSichtbar(phase: String, t: String, e: String?): Boolean = when (phase) {
+        "SC" -> e == "SC" || Regex("\\bSC\\b").containsMatchIn(t)
+        "VSC" -> e == "VSC" || Regex("\\bVSC\\b").containsMatchIn(t)
+        "RED" -> e == "RED"
+        "YELLOW" -> e == "YELLOW" || e == "SC" || e == "VSC"
+        else -> false
+    }
+
+    /** Wartezeit ohne Hinweis, bis die Phase als beendet gilt. */
+    private fun abwesenheitsGrenze(phase: String): Long = if (phase == "YELLOW") 10_000L else 20_000L
+
     /** Liefert ein neues Ereignis zum Melden oder null. */
     fun verarbeite(roh: String, jetzt: Long = System.currentTimeMillis()): String? {
         val t = normalisiere(roh)
         letzterText = t
         val e = klassifiziere(t)
+
+        // Abwesenheit: Hinweis auf die laufende Phase länger nicht im Bild -> Strecke frei
+        aktivePhase?.let { phase ->
+            if (phaseNochSichtbar(phase, t, e)) {
+                phaseZuletztGesehen = jetzt
+            } else if (jetzt - phaseZuletztGesehen > abwesenheitsGrenze(phase)) {
+                aktivePhase = null
+                kandidat = null
+                treffer = 0
+                gemeldet = "CLEAR"
+                gemeldetUm = jetzt
+                letzterText = "$phase nicht mehr im Bild"
+                return "CLEAR"
+            }
+        }
+
         if (e == null) {
             kandidat = null
             treffer = 0
@@ -49,6 +81,12 @@ class Erkenner {
         if (treffer >= 2 && (e != gemeldet || jetzt - gemeldetUm > 60_000)) {
             gemeldet = e
             gemeldetUm = jetzt
+            if (e in setOf("YELLOW", "VSC", "SC", "RED")) {
+                aktivePhase = e
+                phaseZuletztGesehen = jetzt
+            } else {
+                aktivePhase = null
+            }
             return e
         }
         return null

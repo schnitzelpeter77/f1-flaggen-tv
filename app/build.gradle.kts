@@ -47,4 +47,5 @@ dependencies {
     implementation("androidx.core:core-ktx:1.13.1")
     // Texterkennung komplett in der App (kein Download zur Laufzeit nötig)
     implementation("com.google.mlkit:text-recognition:16.0.1")
+    testImplementation("junit:junit:4.13.2")
 }

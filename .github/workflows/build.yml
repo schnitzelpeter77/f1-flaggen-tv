@@ -23,6 +23,9 @@ jobs:
         with:
           gradle-version: "8.10.2"
 
+      - name: Tests
+        run: gradle :app:testReleaseUnitTest --no-daemon
+
       - name: Bauen
         run: gradle :app:assembleRelease --no-daemon
 
