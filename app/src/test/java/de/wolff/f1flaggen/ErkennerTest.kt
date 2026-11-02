@@ -24,14 +24,14 @@ class ErkennerTest {
     }
 
     @Test
-    fun gelbEndetNachZehnSekundenOhneHinweis() {
+    fun gelbEndetNachFuenfSekundenOhneHinweis() {
         val e = Erkenner()
         val bilder = List(3) { "YELLOW FLAG" } + List(20) { "LAP 2/71 SKY SPORT" }
         val r = abspielen(e, 0, bilder)
         assertEquals("YELLOW", r[0].second)
         assertEquals("CLEAR", r[1].second)
-        // Ende frühestens 10 s nach dem letzten Hinweis (bei 1400 ms)
-        assert(r[1].first > 1400 + 10_000)
+        // Ende frühestens 5 s nach dem letzten Hinweis (bei 1400 ms)
+        assert(r[1].first > 1400 + 5_000)
         assertEquals(2, r.size)
     }
 
@@ -44,18 +44,18 @@ class ErkennerTest {
     }
 
     @Test
-    fun safetyCarEndetNachZwanzigSekundenOhneHinweis() {
+    fun safetyCarEndetNachFuenfSekundenOhneHinweis() {
         val e = Erkenner()
         val bilder = List(2) { "SAFETY CAR DEPLOYED" } + List(40) { "LAP 13 VER HAM LEC" }
         val r = abspielen(e, 0, bilder)
         assertEquals(listOf("SC", "CLEAR"), r.map { it.second })
-        assert(r[1].first > 700 + 20_000)
+        assert(r[1].first > 700 + 5_000)
     }
 
     @Test
     fun kurzeWiederholungOhneEinblendungBeendetSCnicht() {
         val e = Erkenner()
-        val bilder = List(2) { "SAFETY CAR" } + List(15) { "REPLAY" } + List(5) { "SC LAP 14" } + List(15) { "REPLAY" }
+        val bilder = List(2) { "SAFETY CAR" } + List(5) { "REPLAY" } + List(5) { "SC LAP 14" } + List(5) { "REPLAY" }
         val r = abspielen(e, 0, bilder)
         assertEquals(listOf("SC"), r.map { it.second })
     }

@@ -45,7 +45,7 @@ class Erkenner {
     }
 
     /** Wartezeit ohne Hinweis, bis die Phase als beendet gilt. */
-    private fun abwesenheitsGrenze(phase: String): Long = if (phase == "YELLOW") 10_000L else 20_000L
+    private fun abwesenheitsGrenze(@Suppress("UNUSED_PARAMETER") phase: String): Long = 5_000L
 
     /** Liefert ein neues Ereignis zum Melden oder null. */
     fun verarbeite(roh: String, jetzt: Long = System.currentTimeMillis()): String? {
