@@ -60,6 +60,38 @@ anker = "function renderLineup("
 if anker not in s:
     print("FEHLER: renderLineup nicht gefunden – nichts geaendert"); sys.exit(1)
 
+# --- Heim links / Gast rechts, Spielfeld quer wie im TV ---
+ersetzungen = [
+    ("  hEl.textContent = 'Aufstellung ' + nm;",
+     "  const heim = team.homeAway === 'home';\n  hEl.textContent = 'Aufstellung ' + nm + (heim ? ' · Heim' : ' · Gast');"),
+    ('style="left:${x}%;top:${y}%"',
+     'style="left:${heim ? 100 - y : y}%;top:${heim ? x : 100 - x}%"'),
+    ('<div class="pitch ${cls}"',
+     '<div class="pitch quer ${heim ? \'heim\' : \'gast\'} ${cls}"'),
+    ("    renderLineup(sd.opp, $('lineOpp'), $('lhOpp'), 'opp');",
+     "    renderLineup(sd.opp, $('lineOpp'), $('lhOpp'), 'opp');\n"
+     "    { const hs = sd.svw.homeAway === 'home';  // Heim-Aufstellung links, Gast rechts\n"
+     "      $('lineSvw').parentElement.style.order = hs ? -2 : -1;\n"
+     "      $('lineOpp').parentElement.style.order = hs ? -1 : -2; }"),
+    ("</style>", """/* Spielfeld quer: Heim verteidigt links, Gast rechts */
+.pitch.quer{aspect-ratio:88/68;background:repeating-linear-gradient(90deg,var(--pitch1) 0 9%,var(--pitch2) 9% 18%)}
+.pitch.quer .half{top:0;bottom:0;width:0;height:auto;border-width:0}
+.pitch.quer.heim .half{left:auto;right:0;border-right-width:2px}
+.pitch.quer.gast .half{right:auto;left:0;border-left-width:2px}
+.pitch.quer .circle{height:26%;width:auto;aspect-ratio:1;top:37%}
+.pitch.quer.heim .circle{left:auto;right:-10%}
+.pitch.quer.gast .circle{right:auto;left:-10%}
+.pitch.quer .box{top:20%;bottom:20%;height:auto;width:16%;border:2px solid rgba(255,255,255,.35)}
+.pitch.quer .six{top:36%;bottom:36%;height:auto;width:6%;border:2px solid rgba(255,255,255,.35)}
+.pitch.quer.heim .box,.pitch.quer.heim .six{left:0;right:auto;border-left:0}
+.pitch.quer.gast .box,.pitch.quer.gast .six{right:0;left:auto;border-right:0}
+</style>"""),
+]
+for alt_t, neu_t in ersetzungen:
+    if s.count(alt_t) != 1:
+        print("FEHLER: Stelle nicht eindeutig gefunden – nichts geaendert:", alt_t[:60]); sys.exit(1)
+    s = s.replace(alt_t, neu_t, 1)
+
 sicherung = pfad + ".bak-" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
 shutil.copy2(pfad, sicherung)
 s = s.replace(alt, neu, 1).replace(anker, tiefe + anker, 1)
