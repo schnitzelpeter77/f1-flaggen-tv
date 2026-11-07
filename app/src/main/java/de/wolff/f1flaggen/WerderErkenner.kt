@@ -80,6 +80,15 @@ class WerderErkenner {
         return Regex("^(\\d{1,2})$").find(t)?.groupValues?.get(1)?.toInt()?.takeIf { it <= 15 }
     }
 
+    /** Zwei einstellige Torzahlen, die als ein Wort gelesen wurden ("10" -> 1 und 0). */
+    fun zifferPaar(roh: String): Pair<Int, Int>? {
+        val t = roh.trim().replace(" ", "")
+            .map { when (it) { 'O', 'o', 'D', 'Q' -> '0'; 'I', 'l', '|', 'i', '!' -> '1'; 'Z', 'z' -> '2'; else -> it } }
+            .joinToString("")
+        if (t.length != 2 || !t.all(Char::isDigit)) return null
+        return t[0].digitToInt() to t[1].digitToInt()
+    }
+
     /** Baut aus Kürzeln, Ziffern und Uhr einen Text, den [lies] versteht. */
     fun synthetisch(links: Wort, rechts: Wort, a: Int, b: Int, uhr: String?): String =
         "${links.text} $a $b ${rechts.text}" + (uhr?.let { " $it" } ?: "")

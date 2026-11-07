@@ -219,8 +219,7 @@ class CaptureService : Service() {
                 el.boundingBox?.let { b -> WerderErkenner.Wort(el.text, b.left, b.top, b.right, b.bottom) }
             }
             werder.kuerzelPaar(woerter)?.let { (links, rechts) ->
-                val a = liesZiffer(ausschnitt, links)
-                val b = liesZiffer(ausschnitt, rechts)
+                val (a, b) = liesZiffernPaar(ausschnitt, links, rechts)
                 val uhr = Regex("\\b\\d{1,3}:[0-5]\\d\\b").find(text)?.value
                 ziffernInfo = " | Ziffern ${links.text}=${a ?: "?"} ${rechts.text}=${b ?: "?"}"
                 if (a != null && b != null) text = werder.synthetisch(links, rechts, a, b, uhr)
@@ -246,23 +245,56 @@ class CaptureService : Service() {
         }
     }
 
-    /** Schneidet das Ziffernfeld unter einem Kürzel aus, vergrößert es mit Rand und liest die Zahl. */
-    private fun liesZiffer(ausschnitt: Bitmap, k: WerderErkenner.Wort): Int? {
+    /** Ziffernfeld unter einem Kürzel als Schwarz-auf-Weiß-Bild (Höhe 120 px), oder null. */
+    private fun ziffernBild(ausschnitt: Bitmap, k: WerderErkenner.Wort): Bitmap? {
         val f = werder.ziffernFeld(k, ausschnitt.width, ausschnitt.height)
         val w = f[2] - f[0]
         val hh = f[3] - f[1]
         if (w < 8 || hh < 8) return null
         val feld = Bitmap.createBitmap(ausschnitt, f[0], f[1], w, hh)
-        val faktor = 160f / hh
-        val gross = Bitmap.createScaledBitmap(feld, (w * faktor).toInt().coerceAtLeast(1), 160, true)
-        // Rand in Hintergrundfarbe (Ecke), damit die Ziffer frei steht
-        val rand = 60
-        val mitRand = Bitmap.createBitmap(gross.width + rand * 2, gross.height + rand * 2, Bitmap.Config.ARGB_8888)
-        val leinwand = android.graphics.Canvas(mitRand)
-        leinwand.drawColor(gross.getPixel(2, 2))
-        leinwand.drawBitmap(gross, rand.toFloat(), rand.toFloat(), null)
-        val r = Tasks.await(texterkennung.process(InputImage.fromBitmap(mitRand, 0)))
-        return werder.ziffer(r.text)
+        val px = IntArray(w * hh)
+        feld.getPixels(px, 0, w, 0, 0, w, hh)
+        val hell = IntArray(px.size) { val p = px[it]; (((p shr 16) and 0xFF) * 299 + ((p shr 8) and 0xFF) * 587 + (p and 0xFF) * 114) / 1000 }
+        val schwelle = hell.average()
+        // Hintergrund = Mehrheit der Pixel; Schrift wird schwarz, Hintergrund weiß
+        val dunkelAnteil = hell.count { it < schwelle }.toDouble() / hell.size
+        val schriftDunkel = dunkelAnteil < 0.5
+        val aus = IntArray(px.size) {
+            val istSchrift = if (schriftDunkel) hell[it] < schwelle else hell[it] >= schwelle
+            if (istSchrift) 0xFF000000.toInt() else 0xFFFFFFFF.toInt()
+        }
+        val sw = Bitmap.createBitmap(aus, w, hh, Bitmap.Config.ARGB_8888)
+        val faktor = 120f / hh
+        return Bitmap.createScaledBitmap(sw, (w * faktor).toInt().coerceAtLeast(1), 120, true)
+    }
+
+    /**
+     * Liest beide Torzahlen: Ziffernfelder nebeneinander auf weißem Grund ("1 0"),
+     * weil einzelne Ziffern (v. a. die 0) von der Texterkennung sonst oft übersehen werden.
+     */
+    private fun liesZiffernPaar(ausschnitt: Bitmap, links: WerderErkenner.Wort, rechts: WerderErkenner.Wort): Pair<Int?, Int?> {
+        val a = ziffernBild(ausschnitt, links) ?: return null to null
+        val b = ziffernBild(ausschnitt, rechts) ?: return null to null
+        val rand = 50
+        val luecke = 40
+        val bild = Bitmap.createBitmap(a.width + b.width + rand * 2 + luecke, 120 + rand * 2, Bitmap.Config.ARGB_8888)
+        val leinwand = android.graphics.Canvas(bild)
+        leinwand.drawColor(android.graphics.Color.WHITE)
+        leinwand.drawBitmap(a, rand.toFloat(), rand.toFloat(), null)
+        leinwand.drawBitmap(b, (rand + a.width + luecke).toFloat(), rand.toFloat(), null)
+        val r = Tasks.await(texterkennung.process(InputImage.fromBitmap(bild, 0)))
+        // Wörter nach Position zuordnen: linke Hälfte = linkes Team
+        val mitte = rand + a.width + luecke / 2
+        val elemente = r.textBlocks.flatMap { it.lines }.flatMap { it.elements }
+        var za: Int? = null
+        var zb: Int? = null
+        for (el in elemente) {
+            val box = el.boundingBox ?: continue
+            if (box.right <= mitte + 10) za = za ?: werder.ziffer(el.text)
+            else if (box.left >= mitte - 10) zb = zb ?: werder.ziffer(el.text)
+            else werder.zifferPaar(el.text)?.let { (x, y) -> za = za ?: x; zb = zb ?: y } // "10" als ein Wort
+        }
+        return za to zb
     }
 
     private fun istSchwarz(b: Bitmap): Boolean {
