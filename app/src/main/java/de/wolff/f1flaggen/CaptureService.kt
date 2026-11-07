@@ -20,6 +20,7 @@ import android.os.Handler
 import android.os.HandlerThread
 import android.os.IBinder
 import android.util.Log
+import com.google.android.gms.tasks.Tasks
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
@@ -187,41 +188,81 @@ class CaptureService : Service() {
 
     /**
      * Werder: oberen Bildrand (Spielstand-Einblendung) doppelt vergrößert lesen.
-     * Läuft nach der F1-Erkennung im selben Takt; danach ist der Durchlauf fertig.
+     * Läuft nach der F1-Erkennung auf dem Hintergrund-Faden; danach ist der Durchlauf fertig.
      */
     private fun pruefeSpielstand(bitmap: Bitmap) {
-        val ausschnitt = try {
-            val h = (HOEHE * 0.22f).toInt()
-            Bitmap.createScaledBitmap(Bitmap.createBitmap(bitmap, 0, 0, BREITE, h), BREITE * 2, h * 2, true)
-        } catch (ex: Exception) {
-            beschaeftigt = false
-            return
-        }
-        texterkennung.process(InputImage.fromBitmap(ausschnitt, 0))
-            .addOnSuccessListener { ergebnis ->
-                // Zeilen von oben nach unten, links nach rechts zu einem Text zusammensetzen
-                val zeilen = ergebnis.textBlocks.flatMap { it.lines }
-                    .sortedWith(compareBy({ (it.boundingBox?.top ?: 0) / 40 }, { it.boundingBox?.left ?: 0 }))
-                val text = zeilen.joinToString(" ") { it.text }
-                val ev = werder.verarbeite(text)
-                val e = Einstellungen(this)
-                if (ev != null) {
-                    if (ev.art != "stand") letztesEreignis = "Werder ${ev.art} ${ev.alsText()}"
-                    Melder.sende(
-                        this, ev.art, ev.alsText(), webhook = e.werderWebhook,
-                        extra = mapOf(
-                            "werder" to ev.stand.werder, "gegner" to ev.stand.gegner,
-                            "gegner_name" to ev.stand.gegnerName, "minute" to ev.minute
-                        )
-                    )
-                }
-                val jetzt = System.currentTimeMillis()
-                if (e.debug && jetzt - letztesWerderDebug > 15_000) {
-                    letztesWerderDebug = jetzt
-                    Melder.sende(this, "debug", werder.letzterText, webhook = e.werderWebhook)
-                }
+        handler.post {
+            try {
+                werderDurchlauf(bitmap)
+            } catch (ex: Exception) {
+                Log.w("F1Flaggen", "Werder-Auswertung fehlgeschlagen", ex)
+            } finally {
+                beschaeftigt = false
             }
-            .addOnCompleteListener { beschaeftigt = false }
+        }
+    }
+
+    private fun werderDurchlauf(bitmap: Bitmap) {
+        val h = (HOEHE * 0.22f).toInt()
+        val ausschnitt = Bitmap.createScaledBitmap(Bitmap.createBitmap(bitmap, 0, 0, BREITE, h), BREITE * 2, h * 2, true)
+        val ergebnis = Tasks.await(texterkennung.process(InputImage.fromBitmap(ausschnitt, 0)))
+
+        // Zeilen von oben nach unten, links nach rechts zu einem Text zusammensetzen
+        val zeilen = ergebnis.textBlocks.flatMap { it.lines }
+            .sortedWith(compareBy({ (it.boundingBox?.top ?: 0) / 40 }, { it.boundingBox?.left ?: 0 }))
+        var text = zeilen.joinToString(" ") { it.text }
+        var ziffernInfo = ""
+
+        // Zweizeilige Bundesliga-Grafik: Ziffern stehen unter den Kürzeln und fehlen oft im Text
+        if (werder.lies(text).first == null) {
+            val woerter = zeilen.flatMap { it.elements }.mapNotNull { el ->
+                el.boundingBox?.let { b -> WerderErkenner.Wort(el.text, b.left, b.top, b.right, b.bottom) }
+            }
+            werder.kuerzelPaar(woerter)?.let { (links, rechts) ->
+                val a = liesZiffer(ausschnitt, links)
+                val b = liesZiffer(ausschnitt, rechts)
+                val uhr = Regex("\\b\\d{1,3}:[0-5]\\d\\b").find(text)?.value
+                ziffernInfo = " | Ziffern ${links.text}=${a ?: "?"} ${rechts.text}=${b ?: "?"}"
+                if (a != null && b != null) text = werder.synthetisch(links, rechts, a, b, uhr)
+            }
+        }
+
+        val ev = werder.verarbeite(text)
+        val e = Einstellungen(this)
+        if (ev != null) {
+            if (ev.art != "stand") letztesEreignis = "Werder ${ev.art} ${ev.alsText()}"
+            Melder.sende(
+                this, ev.art, ev.alsText(), webhook = e.werderWebhook,
+                extra = mapOf(
+                    "werder" to ev.stand.werder, "gegner" to ev.stand.gegner,
+                    "gegner_name" to ev.stand.gegnerName, "minute" to ev.minute
+                )
+            )
+        }
+        val jetzt = System.currentTimeMillis()
+        if (e.debug && jetzt - letztesWerderDebug > 15_000) {
+            letztesWerderDebug = jetzt
+            Melder.sende(this, "debug", werder.letzterText + ziffernInfo, webhook = e.werderWebhook)
+        }
+    }
+
+    /** Schneidet das Ziffernfeld unter einem Kürzel aus, vergrößert es mit Rand und liest die Zahl. */
+    private fun liesZiffer(ausschnitt: Bitmap, k: WerderErkenner.Wort): Int? {
+        val f = werder.ziffernFeld(k, ausschnitt.width, ausschnitt.height)
+        val w = f[2] - f[0]
+        val hh = f[3] - f[1]
+        if (w < 8 || hh < 8) return null
+        val feld = Bitmap.createBitmap(ausschnitt, f[0], f[1], w, hh)
+        val faktor = 160f / hh
+        val gross = Bitmap.createScaledBitmap(feld, (w * faktor).toInt().coerceAtLeast(1), 160, true)
+        // Rand in Hintergrundfarbe (Ecke), damit die Ziffer frei steht
+        val rand = 60
+        val mitRand = Bitmap.createBitmap(gross.width + rand * 2, gross.height + rand * 2, Bitmap.Config.ARGB_8888)
+        val leinwand = android.graphics.Canvas(mitRand)
+        leinwand.drawColor(gross.getPixel(2, 2))
+        leinwand.drawBitmap(gross, rand.toFloat(), rand.toFloat(), null)
+        val r = Tasks.await(texterkennung.process(InputImage.fromBitmap(mitRand, 0)))
+        return werder.ziffer(r.text)
     }
 
     private fun istSchwarz(b: Bitmap): Boolean {

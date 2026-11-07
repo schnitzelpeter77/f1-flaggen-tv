@@ -20,7 +20,7 @@ class WerderErkennerTest {
 
     @Test
     fun langerName() {
-        assertEquals(WerderErkenner.Stand(1, 0, "BAYERN"), stand("SV WERDER BREMEN 1 0 FC BAYERN"))
+        assertEquals(WerderErkenner.Stand(1, 0, "FC"), stand("SV WERDER BREMEN 1 0 FC BAYERN"))
     }
 
     @Test
@@ -77,5 +77,21 @@ class WerderErkennerTest {
         assertEquals("gegentor", bild("SVW 1 2 BVB")?.art)
         repeat(2) { bild("SVW 1 1 BVB") }
         assertEquals("korrektur", bild("SVW 1 1 BVB")?.art)
+    }
+
+    @Test
+    fun zweizeiligeBundesligaGrafik() {
+        val e = WerderErkenner()
+        val w = listOf(
+            WerderErkenner.Wort("sky", 200, 40, 250, 60), WerderErkenner.Wort("sport", 255, 40, 320, 60),
+            WerderErkenner.Wort("VFB", 1950, 60, 2000, 82), WerderErkenner.Wort("SVW", 2040, 60, 2095, 82),
+            WerderErkenner.Wort("24:01", 2110, 60, 2180, 82)
+        )
+        val (links, rechts) = e.kuerzelPaar(w)!!
+        assertEquals("VFB", links.text)
+        assertEquals("SVW", rechts.text)
+        assertEquals(WerderErkenner.Stand(0, 1, "VFB"), e.lies(e.synthetisch(links, rechts, 1, 0, "24:01")).first)
+        assertEquals(0, e.ziffer("O"))
+        assertNull(e.ziffer("SVW"))
     }
 }

@@ -30,10 +30,59 @@ class WerderErkenner {
         private const val NEUSTART_NACH_MS = 10 * 60_000L
         private val WERDER = setOf("SVW", "WERDER", "BREMEN", "SVWERDER", "SVWB")
         private val KEIN_TEAM = setOf(
-            "LIVE", "SKY", "DAZN", "ARD", "ZDF", "SAT", "HD", "UHD", "MIN", "HZ", "HALBZEIT",
-            "CLOCK", "SV", "FC", "VFL", "VFB", "TSG", "FSV", "SC", "RB", "BUNDESLIGA", "POKAL", "DFB"
+            // Senderlogos und Einblendungstexte – Vereinskürzel wie VFB, TSG, RBL bleiben erlaubt
+            "LIVE", "SKY", "SPORT", "TOP", "DAZN", "ARD", "ZDF", "SAT", "HD", "UHD", "MIN", "HZ", "HALBZEIT",
+            "CLOCK", "BUNDESLIGA", "POKAL", "DFB", "NACHSPIELZEIT", "ZEITLUPE", "WIEDERHOLUNG"
         )
     }
+
+    /** Ein erkanntes Wort mit Position (Pixel im Ausschnitt). */
+    data class Wort(val text: String, val links: Int, val oben: Int, val rechts: Int, val unten: Int) {
+        val mitteX get() = (links + rechts) / 2
+        val mitteY get() = (oben + unten) / 2
+        val hoehe get() = unten - oben
+    }
+
+    /**
+     * Zweizeilige Einblendung (Bundesliga-Grafik: oben "VFB SVW 24:01", darunter große Ziffern):
+     * findet das Werder-Kürzel und das Gegnerkürzel in derselben Zeile.
+     * Liefert (links, rechts) in Bildreihenfolge oder null.
+     */
+    fun kuerzelPaar(woerter: List<Wort>): Pair<Wort, Wort>? {
+        val norm = { w: Wort -> w.text.uppercase().replace(Regex("[^A-Z]"), "") }
+        val w = woerter.firstOrNull { norm(it) in WERDER } ?: return null
+        val g = woerter
+            .filter { it !== w }
+            .filter { val n = norm(it); n.length in 2..5 && n == it.text.uppercase().trim() && n !in KEIN_TEAM && n !in WERDER }
+            .filter { kotlin.math.abs(it.mitteY - w.mitteY) < w.hoehe * 0.7 }
+            .minByOrNull { kotlin.math.abs(it.mitteX - w.mitteX) }
+            ?: return null
+        // Kürzel liegen nebeneinander (höchstens ~6 Kürzelbreiten auseinander)
+        if (kotlin.math.abs(g.mitteX - w.mitteX) > (w.rechts - w.links) * 6) return null
+        return if (w.mitteX < g.mitteX) w to g else g to w
+    }
+
+    /** Ziffernfeld unter einem Kürzel (Bereich im Ausschnitt). */
+    fun ziffernFeld(k: Wort, breite: Int, hoehe: Int): IntArray {
+        val b = k.rechts - k.links
+        val l = (k.links - b * 0.25).toInt().coerceAtLeast(0)
+        val r = (k.rechts + b * 0.25).toInt().coerceAtMost(breite)
+        val o = (k.unten + k.hoehe * 0.15).toInt().coerceAtMost(hoehe - 1)
+        val u = (k.unten + k.hoehe * 3.6).toInt().coerceAtMost(hoehe)
+        return intArrayOf(l, o, r, u)
+    }
+
+    /** Liest eine einzelne Torzahl aus dem Text eines Ziffernfelds (typische Verwechslungen werden korrigiert). */
+    fun ziffer(roh: String): Int? {
+        val t = roh.trim().replace(" ", "")
+            .map { when (it) { 'O', 'o', 'D', 'Q' -> '0'; 'I', 'l', '|', 'i', '!' -> '1'; 'Z', 'z' -> '2'; else -> it } }
+            .joinToString("")
+        return Regex("^(\\d{1,2})$").find(t)?.groupValues?.get(1)?.toInt()?.takeIf { it <= 15 }
+    }
+
+    /** Baut aus Kürzeln, Ziffern und Uhr einen Text, den [lies] versteht. */
+    fun synthetisch(links: Wort, rechts: Wort, a: Int, b: Int, uhr: String?): String =
+        "${links.text} $a $b ${rechts.text}" + (uhr?.let { " $it" } ?: "")
 
     private var kandidat: Stand? = null
     private var kandidatZaehler = 0
