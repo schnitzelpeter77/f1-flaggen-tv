@@ -14,6 +14,11 @@ class Einstellungen(ctx: Context) {
         get() = sp.getString("webhook", "f1_tv_bild") ?: ""
         set(v) = sp.edit().putString("webhook", v.trim()).apply()
 
+    /** Webhook für die Werder-Spielstand-Erkennung. */
+    var werderWebhook: String
+        get() = sp.getString("werder_webhook", "werder_tv_bild") ?: ""
+        set(v) = sp.edit().putString("werder_webhook", v.trim()).apply()
+
     /** Wenn an: alle 15 s erkannten Text an Home Assistant schicken (zum Einstellen der Erkennung). */
     var debug: Boolean
         get() = sp.getBoolean("debug", false)

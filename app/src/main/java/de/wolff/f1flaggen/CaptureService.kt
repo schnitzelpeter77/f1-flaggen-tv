@@ -51,6 +51,8 @@ class CaptureService : Service() {
     private lateinit var handler: Handler
     private val texterkennung = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
     private val erkenner = Erkenner()
+    private val werder = WerderErkenner()
+    private var letztesWerderDebug = 0L
     @Volatile private var beschaeftigt = false
     private var letztesDebug = 0L
     private var schwarzeBilder = 0
@@ -85,7 +87,7 @@ class CaptureService : Service() {
         }
         val notification = Notification.Builder(this, KANAL)
             .setContentTitle("F1 Flaggen-Erkennung läuft")
-            .setContentText("Liest Safety Car, VSC und Flaggen aus dem TV-Bild")
+            .setContentText("Liest F1-Flaggen und den Werder-Spielstand aus dem TV-Bild")
             .setSmallIcon(android.R.drawable.ic_menu_view)
             .build()
         if (Build.VERSION.SDK_INT >= 29) {
@@ -178,6 +180,45 @@ class CaptureService : Service() {
                 if (Einstellungen(this).debug && jetzt - letztesDebug > 15_000) {
                     letztesDebug = jetzt
                     Melder.sende(this, "debug", erkenner.letzterText)
+                }
+            }
+            .addOnCompleteListener { pruefeSpielstand(bitmap) }
+    }
+
+    /**
+     * Werder: oberen Bildrand (Spielstand-Einblendung) doppelt vergrößert lesen.
+     * Läuft nach der F1-Erkennung im selben Takt; danach ist der Durchlauf fertig.
+     */
+    private fun pruefeSpielstand(bitmap: Bitmap) {
+        val ausschnitt = try {
+            val h = (HOEHE * 0.22f).toInt()
+            Bitmap.createScaledBitmap(Bitmap.createBitmap(bitmap, 0, 0, BREITE, h), BREITE * 2, h * 2, true)
+        } catch (ex: Exception) {
+            beschaeftigt = false
+            return
+        }
+        texterkennung.process(InputImage.fromBitmap(ausschnitt, 0))
+            .addOnSuccessListener { ergebnis ->
+                // Zeilen von oben nach unten, links nach rechts zu einem Text zusammensetzen
+                val zeilen = ergebnis.textBlocks.flatMap { it.lines }
+                    .sortedWith(compareBy({ (it.boundingBox?.top ?: 0) / 40 }, { it.boundingBox?.left ?: 0 }))
+                val text = zeilen.joinToString(" ") { it.text }
+                val ev = werder.verarbeite(text)
+                val e = Einstellungen(this)
+                if (ev != null) {
+                    if (ev.art != "stand") letztesEreignis = "Werder ${ev.art} ${ev.alsText()}"
+                    Melder.sende(
+                        this, ev.art, ev.alsText(), webhook = e.werderWebhook,
+                        extra = mapOf(
+                            "werder" to ev.stand.werder, "gegner" to ev.stand.gegner,
+                            "gegner_name" to ev.stand.gegnerName, "minute" to ev.minute
+                        )
+                    )
+                }
+                val jetzt = System.currentTimeMillis()
+                if (e.debug && jetzt - letztesWerderDebug > 15_000) {
+                    letztesWerderDebug = jetzt
+                    Melder.sende(this, "debug", werder.letzterText, webhook = e.werderWebhook)
                 }
             }
             .addOnCompleteListener { beschaeftigt = false }

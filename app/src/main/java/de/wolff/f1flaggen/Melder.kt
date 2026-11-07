@@ -14,15 +14,16 @@ object Melder {
     @Volatile
     var letzteAntwort: String = "–"
 
-    fun sende(ctx: Context, ereignis: String, text: String = "") {
+    fun sende(ctx: Context, ereignis: String, text: String = "", webhook: String? = null, extra: Map<String, Any?> = emptyMap()) {
         val e = Einstellungen(ctx.applicationContext)
-        val ziel = e.haUrl.trimEnd('/') + "/api/webhook/" + e.webhook
+        val ziel = e.haUrl.trimEnd('/') + "/api/webhook/" + (webhook ?: e.webhook)
         ausfuehrer.execute {
             try {
                 val json = JSONObject()
                     .put("event", ereignis)
                     .put("text", text.take(400))
                     .put("ts", System.currentTimeMillis())
+                    .also { j -> extra.forEach { (k, v) -> j.put(k, v ?: JSONObject.NULL) } }
                     .toString()
                 val verbindung = URL(ziel).openConnection() as HttpURLConnection
                 verbindung.requestMethod = "POST"
