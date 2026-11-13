@@ -8,10 +8,13 @@ package de.wolff.f1flaggen
  * Werder wird an SVW / WERDER / BREMEN erkannt. Steht Werder links vom Ergebnis, gilt die erste Zahl,
  * steht Werder rechts, die zweite.
  *
+ * Dieselbe Logik dient auch für die Nationalmannschaft: [WerderErkenner] mit [DEUTSCHLAND]
+ * als Teamkürzel ("GER 1 : 0 FRA", "DEUTSCHLAND 2 1 NIEDERLANDE").
+ *
  * Ein neuer Stand gilt erst, wenn er [BESTAETIGUNGEN]-mal hintereinander gleich gelesen wurde.
  * Der erste Stand nach dem Einschalten ist nur die Ausgangslage (kein Tor).
  */
-class WerderErkenner {
+class WerderErkenner(private val kuerzel: Set<String> = WERDER) {
 
     data class Stand(val werder: Int, val gegner: Int, val gegnerName: String)
 
@@ -28,11 +31,15 @@ class WerderErkenner {
         const val BESTAETIGUNGEN = 3
         private const val HERZSCHLAG_MS = 20_000L
         private const val NEUSTART_NACH_MS = 10 * 60_000L
-        private val WERDER = setOf("SVW", "WERDER", "BREMEN", "SVWERDER", "SVWB")
+        val WERDER = setOf("SVW", "WERDER", "BREMEN", "SVWERDER", "SVWB")
+        /** Kürzel der deutschen Nationalmannschaft in TV-Einblendungen (ARD, ZDF, RTL, MagentaTV, DAZN). */
+        val DEUTSCHLAND = setOf("GER", "DEU", "DEUTSCHLAND", "DFB", "GERMANY")
         private val KEIN_TEAM = setOf(
             // Senderlogos und Einblendungstexte – Vereinskürzel wie VFB, TSG, RBL bleiben erlaubt
             "LIVE", "SKY", "SPORT", "TOP", "DAZN", "ARD", "ZDF", "SAT", "HD", "UHD", "MIN", "HZ", "HALBZEIT",
-            "CLOCK", "BUNDESLIGA", "POKAL", "DFB", "NACHSPIELZEIT", "ZEITLUPE", "WIEDERHOLUNG"
+            "CLOCK", "BUNDESLIGA", "POKAL", "DFB", "NACHSPIELZEIT", "ZEITLUPE", "WIEDERHOLUNG",
+            // Länderspiel-Einblendungen
+            "RTL", "MAGENTA", "MAGENTATV", "TV", "UEFA", "FIFA", "NATIONS", "LEAGUE", "WM", "EM", "QUALI", "EURO"
         )
     }
 
@@ -50,10 +57,10 @@ class WerderErkenner {
      */
     fun kuerzelPaar(woerter: List<Wort>): Pair<Wort, Wort>? {
         val norm = { w: Wort -> w.text.uppercase().replace(Regex("[^A-Z]"), "") }
-        val w = woerter.firstOrNull { norm(it) in WERDER } ?: return null
+        val w = woerter.firstOrNull { norm(it) in kuerzel } ?: return null
         val g = woerter
             .filter { it !== w }
-            .filter { val n = norm(it); n.length in 2..5 && n == it.text.uppercase().trim() && n !in KEIN_TEAM && n !in WERDER }
+            .filter { val n = norm(it); n.length in 2..5 && n == it.text.uppercase().trim() && n !in KEIN_TEAM && n !in kuerzel }
             .filter { kotlin.math.abs(it.mitteY - w.mitteY) < w.hoehe * 0.7 }
             .minByOrNull { kotlin.math.abs(it.mitteX - w.mitteX) }
             ?: return null
@@ -124,13 +131,13 @@ class WerderErkenner {
         letzterText = t
 
         val tok = t.split(" ").filter { it.isNotEmpty() }
-        val werderIdx = tok.indices.filter { tok[it] in WERDER }
+        val werderIdx = tok.indices.filter { tok[it] in kuerzel }
         if (werderIdx.isEmpty()) return null to minute
         val start = werderIdx.first()
         val ende = werderIdx.last()
 
         fun zahl(i: Int): Int? = tok.getOrNull(i)?.takeIf { it.length <= 2 && it.all(Char::isDigit) }?.toInt()?.takeIf { it <= 15 }
-        fun team(i: Int): String? = tok.getOrNull(i)?.takeIf { it.length in 2..14 && it.all(Char::isLetter) && it !in KEIN_TEAM && it !in WERDER }
+        fun team(i: Int): String? = tok.getOrNull(i)?.takeIf { it.length in 2..14 && it.all(Char::isLetter) && it !in KEIN_TEAM && it !in kuerzel }
 
         // Werder links: WERDER a b GEGNER
         val heim = zahl(ende + 1)?.let { a -> zahl(ende + 2)?.let { b ->

@@ -94,4 +94,39 @@ class WerderErkennerTest {
         assertEquals(0, e.ziffer("O"))
         assertNull(e.ziffer("SVW"))
     }
+
+    // ---- Nationalmannschaft ----
+
+    private fun dfb(roh: String) = WerderErkenner(WerderErkenner.DEUTSCHLAND).lies(roh).first
+
+    @Test
+    fun deutschlandHeimGer() {
+        assertEquals(WerderErkenner.Stand(2, 1, "FRA"), dfb("ZDF GER 2 : 1 FRA 63:10"))
+    }
+
+    @Test
+    fun deutschlandAuswaertsDeu() {
+        assertEquals(WerderErkenner.Stand(1, 0, "NED"), dfb("NED 0-1 DEU 12:30"))
+    }
+
+    @Test
+    fun deutschlandAusgeschrieben() {
+        assertEquals(WerderErkenner.Stand(3, 0, "SLOWAKEI"), dfb("RTL DEUTSCHLAND 3 0 SLOWAKEI 80:00"))
+    }
+
+    @Test
+    fun deutschlandWirdNichtAlsWerderGelesen() {
+        assertNull(WerderErkenner().lies("GER 1 : 0 FRA 10:00").first)
+        assertNull(dfb("SVW 1 : 0 BVB 23:45"))
+    }
+
+    @Test
+    fun deutschlandTor() {
+        val e = WerderErkenner(WerderErkenner.DEUTSCHLAND)
+        var t = 0L
+        fun bild(x: String) = e.verarbeite(x, t).also { t += 700 }
+        repeat(3) { bild("ARD GER 0 : 0 ESP 20:00") }
+        repeat(2) { bild("ARD GER 1 : 0 ESP 21:00") }
+        assertEquals("tor", bild("ARD GER 1 : 0 ESP 21:02")?.art)
+    }
 }

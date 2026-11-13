@@ -19,6 +19,11 @@ class Einstellungen(ctx: Context) {
         get() = sp.getString("werder_webhook", "werder_tv_bild") ?: ""
         set(v) = sp.edit().putString("werder_webhook", v.trim()).apply()
 
+    /** Webhook für die Spielstand-Erkennung der Nationalmannschaft. */
+    var dfbWebhook: String
+        get() = sp.getString("dfb_webhook", "dfb_tv_bild") ?: ""
+        set(v) = sp.edit().putString("dfb_webhook", v.trim()).apply()
+
     /** Wenn an: alle 15 s erkannten Text an Home Assistant schicken (zum Einstellen der Erkennung). */
     var debug: Boolean
         get() = sp.getBoolean("debug", false)

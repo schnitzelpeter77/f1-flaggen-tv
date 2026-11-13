@@ -53,6 +53,7 @@ class CaptureService : Service() {
     private val texterkennung = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
     private val erkenner = Erkenner()
     private val werder = WerderErkenner()
+    private val deutschland = WerderErkenner(WerderErkenner.DEUTSCHLAND)
     private var letztesWerderDebug = 0L
     @Volatile private var beschaeftigt = false
     private var letztesDebug = 0L
@@ -88,7 +89,7 @@ class CaptureService : Service() {
         }
         val notification = Notification.Builder(this, KANAL)
             .setContentTitle("F1 Flaggen-Erkennung läuft")
-            .setContentText("Liest F1-Flaggen und den Werder-Spielstand aus dem TV-Bild")
+            .setContentText("Liest F1-Flaggen und den Werder-/DFB-Spielstand aus dem TV-Bild")
             .setSmallIcon(android.R.drawable.ic_menu_view)
             .build()
         if (Build.VERSION.SDK_INT >= 29) {
@@ -210,38 +211,43 @@ class CaptureService : Service() {
         // Zeilen von oben nach unten, links nach rechts zu einem Text zusammensetzen
         val zeilen = ergebnis.textBlocks.flatMap { it.lines }
             .sortedWith(compareBy({ (it.boundingBox?.top ?: 0) / 40 }, { it.boundingBox?.left ?: 0 }))
-        var text = zeilen.joinToString(" ") { it.text }
-        var ziffernInfo = ""
-
-        // Zweizeilige Bundesliga-Grafik: Ziffern stehen unter den Kürzeln und fehlen oft im Text
-        if (werder.lies(text).first == null) {
-            val woerter = zeilen.flatMap { it.elements }.mapNotNull { el ->
-                el.boundingBox?.let { b -> WerderErkenner.Wort(el.text, b.left, b.top, b.right, b.bottom) }
-            }
-            werder.kuerzelPaar(woerter)?.let { (links, rechts) ->
-                val (a, b) = liesZiffernPaar(ausschnitt, links, rechts)
-                val uhr = Regex("\\b\\d{1,3}:[0-5]\\d\\b").find(text)?.value
-                ziffernInfo = " | Ziffern ${links.text}=${a ?: "?"} ${rechts.text}=${b ?: "?"}"
-                if (a != null && b != null) text = werder.synthetisch(links, rechts, a, b, uhr)
-            }
-        }
-
-        val ev = werder.verarbeite(text)
+        val text = zeilen.joinToString(" ") { it.text }
         val e = Einstellungen(this)
-        if (ev != null) {
-            if (ev.art != "stand") letztesEreignis = "Werder ${ev.art} ${ev.alsText()}"
-            Melder.sende(
-                this, ev.art, ev.alsText(), webhook = e.werderWebhook,
-                extra = mapOf(
-                    "werder" to ev.stand.werder, "gegner" to ev.stand.gegner,
-                    "gegner_name" to ev.stand.gegnerName, "minute" to ev.minute
+        val debugJetzt = e.debug && System.currentTimeMillis() - letztesWerderDebug > 15_000
+        if (debugJetzt) letztesWerderDebug = System.currentTimeMillis()
+
+        // Dieselbe Einblendung für Werder und die Nationalmannschaft auswerten (je eigener Webhook)
+        for ((name, erk, hook) in listOf(
+            Triple("Werder", werder, e.werderWebhook),
+            Triple("DFB", deutschland, e.dfbWebhook),
+        )) {
+            var t = text
+            var ziffernInfo = ""
+            // Zweizeilige Grafik: Ziffern stehen unter den Kürzeln und fehlen oft im Text
+            if (erk.lies(t).first == null) {
+                val woerter = zeilen.flatMap { it.elements }.mapNotNull { el ->
+                    el.boundingBox?.let { bx -> WerderErkenner.Wort(el.text, bx.left, bx.top, bx.right, bx.bottom) }
+                }
+                erk.kuerzelPaar(woerter)?.let { (links, rechts) ->
+                    val (za, zb) = liesZiffernPaar(ausschnitt, links, rechts)
+                    val uhr = Regex("\\b\\d{1,3}:[0-5]\\d\\b").find(t)?.value
+                    ziffernInfo = " | Ziffern ${links.text}=${za ?: "?"} ${rechts.text}=${zb ?: "?"}"
+                    if (za != null && zb != null) t = erk.synthetisch(links, rechts, za, zb, uhr)
+                }
+            }
+
+            val ev = erk.verarbeite(t)
+            if (ev != null) {
+                if (ev.art != "stand") letztesEreignis = "$name ${ev.art} ${ev.alsText()}"
+                Melder.sende(
+                    this, ev.art, ev.alsText(), webhook = hook,
+                    extra = mapOf(
+                        "werder" to ev.stand.werder, "eigen" to ev.stand.werder, "gegner" to ev.stand.gegner,
+                        "gegner_name" to ev.stand.gegnerName, "minute" to ev.minute
+                    )
                 )
-            )
-        }
-        val jetzt = System.currentTimeMillis()
-        if (e.debug && jetzt - letztesWerderDebug > 15_000) {
-            letztesWerderDebug = jetzt
-            Melder.sende(this, "debug", werder.letzterText + ziffernInfo, webhook = e.werderWebhook)
+            }
+            if (debugJetzt) Melder.sende(this, "debug", erk.letzterText + ziffernInfo, webhook = hook)
         }
     }
 
