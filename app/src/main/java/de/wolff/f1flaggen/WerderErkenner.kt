@@ -11,10 +11,14 @@ package de.wolff.f1flaggen
  * Dieselbe Logik dient auch für die Nationalmannschaft: [WerderErkenner] mit [DEUTSCHLAND]
  * als Teamkürzel ("GER 1 : 0 FRA", "DEUTSCHLAND 2 1 NIEDERLANDE").
  *
- * Ein neuer Stand gilt erst, wenn er [BESTAETIGUNGEN]-mal hintereinander gleich gelesen wurde.
+ * Ein neuer Stand gilt erst, wenn er [bestaetigungen]-mal (Standard [BESTAETIGUNGEN]) hintereinander gleich gelesen wurde.
  * Der erste Stand nach dem Einschalten ist nur die Ausgangslage (kein Tor).
  */
-class WerderErkenner(private val kuerzel: Set<String> = WERDER) {
+class WerderErkenner(
+    private val kuerzel: Set<String> = WERDER,
+    /** Wie oft ein neuer Stand hintereinander gleich gelesen werden muss. */
+    private val bestaetigungen: Int = BESTAETIGUNGEN,
+) {
 
     data class Stand(val werder: Int, val gegner: Int, val gegnerName: String)
 
@@ -175,7 +179,7 @@ class WerderErkenner(private val kuerzel: Set<String> = WERDER) {
             kandidat = stand
             kandidatZaehler = 1
         }
-        if (kandidatZaehler < BESTAETIGUNGEN) return null
+        if (kandidatZaehler < bestaetigungen) return null
 
         val alt = bestaetigt
         if (alt == stand) {

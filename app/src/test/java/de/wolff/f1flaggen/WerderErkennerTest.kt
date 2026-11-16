@@ -122,11 +122,11 @@ class WerderErkennerTest {
 
     @Test
     fun deutschlandTor() {
-        val e = WerderErkenner(WerderErkenner.DEUTSCHLAND)
+        val e = WerderErkenner(WerderErkenner.DEUTSCHLAND, bestaetigungen = 2)
         var t = 0L
-        fun bild(x: String) = e.verarbeite(x, t).also { t += 700 }
-        repeat(3) { bild("ARD GER 0 : 0 ESP 20:00") }
-        repeat(2) { bild("ARD GER 1 : 0 ESP 21:00") }
-        assertEquals("tor", bild("ARD GER 1 : 0 ESP 21:02")?.art)
+        fun bild(x: String) = e.verarbeite(x, t).also { t += 500 }
+        repeat(2) { bild("ARD GER 0 : 0 ESP 20:00") }
+        assertNull(bild("ARD GER 1 : 0 ESP 21:00"))          // einmal gelesen: noch nichts
+        assertEquals("tor", bild("ARD GER 1 : 0 ESP 21:01")?.art) // zweimal: Tor
     }
 }

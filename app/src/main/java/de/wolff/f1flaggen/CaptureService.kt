@@ -37,7 +37,9 @@ class CaptureService : Service() {
         const val EXTRA_DATEN = "daten"
         private const val BREITE = 1280
         private const val HOEHE = 720
-        private const val TAKT_MS = 700L
+        private const val TAKT_MS = 500L
+        /** Solange ein Fußball-Spielstand im Bild ist, wird die F1-Vollbild-Erkennung übersprungen (schneller). */
+        private const val FUSSBALL_AKTIV_MS = 60_000L
         private const val KANAL = "erkennung"
 
         @Volatile var laeuft = false
@@ -53,7 +55,9 @@ class CaptureService : Service() {
     private val texterkennung = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
     private val erkenner = Erkenner()
     private val werder = WerderErkenner()
-    private val deutschland = WerderErkenner(WerderErkenner.DEUTSCHLAND)
+    // Nationalmannschaft: schon nach 2 gleichen Lesungen auslösen (gewünscht: Licht ca. 3 s nach Umspringen der Anzeige)
+    private val deutschland = WerderErkenner(WerderErkenner.DEUTSCHLAND, bestaetigungen = 2)
+    @Volatile private var letzterFussballStand = 0L
     private var letztesWerderDebug = 0L
     @Volatile private var beschaeftigt = false
     private var letztesDebug = 0L
@@ -171,6 +175,11 @@ class CaptureService : Service() {
         }
 
         beschaeftigt = true
+        // Läuft gerade Fußball (Spielstand gelesen), F1-Vollbild-Texterkennung auslassen: halbiert die Zeit pro Durchlauf
+        if (System.currentTimeMillis() - letzterFussballStand < FUSSBALL_AKTIV_MS) {
+            pruefeSpielstand(bitmap)
+            return
+        }
         texterkennung.process(InputImage.fromBitmap(bitmap, 0))
             .addOnSuccessListener { ergebnis ->
                 val ereignis = erkenner.verarbeite(ergebnis.text)
@@ -236,6 +245,7 @@ class CaptureService : Service() {
                 }
             }
 
+            if (erk.lies(t).first != null) letzterFussballStand = System.currentTimeMillis()
             val ev = erk.verarbeite(t)
             if (ev != null) {
                 if (ev.art != "stand") letztesEreignis = "$name ${ev.art} ${ev.alsText()}"
