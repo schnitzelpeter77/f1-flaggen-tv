@@ -37,7 +37,7 @@ class CaptureService : Service() {
         const val EXTRA_DATEN = "daten"
         private const val BREITE = 1280
         private const val HOEHE = 720
-        private const val TAKT_MS = 500L
+        private const val TAKT_MS = 250L
         /** Solange ein Fußball-Spielstand im Bild ist, wird die F1-Vollbild-Erkennung übersprungen (schneller). */
         private const val FUSSBALL_AKTIV_MS = 60_000L
         private const val KANAL = "erkennung"
@@ -55,8 +55,8 @@ class CaptureService : Service() {
     private val texterkennung = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
     private val erkenner = Erkenner()
     private val werder = WerderErkenner()
-    // Nationalmannschaft: schon nach 2 gleichen Lesungen auslösen (gewünscht: Licht ca. 3 s nach Umspringen der Anzeige)
-    private val deutschland = WerderErkenner(WerderErkenner.DEUTSCHLAND, bestaetigungen = 2)
+    // Nationalmannschaft: sofort bei der ersten Lesung der neuen Zahl auslösen (Wunsch: so schnell wie möglich, Fehlauslösung/VAR in Kauf genommen)
+    private val deutschland = WerderErkenner(WerderErkenner.DEUTSCHLAND, bestaetigungen = 1)
     @Volatile private var letzterFussballStand = 0L
     private var letztesWerderDebug = 0L
     @Volatile private var beschaeftigt = false
